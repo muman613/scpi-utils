@@ -94,6 +94,11 @@ if (registeredDevice) {
 - `reset()` sends `*RST`.
 - `clearStatus()` sends `*CLS`.
 
+On a fresh `open()`, the library waits briefly before the first command and will
+automatically reopen-and-retry the first query a small number of times if the
+USB serial link times out or drops. The defaults can be overridden with
+`SCPI_DEVICE_OPEN_SETTLE_MS` and `SCPI_DEVICE_OPEN_RETRIES`.
+
 ### DVM helpers
 
 - `configureDvm(function)` sends `CONF:<function>`.

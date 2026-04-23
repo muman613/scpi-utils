@@ -137,6 +137,7 @@ private:
     int fd_ = -1;
     std::string port_;
     SerialOptions options_;
+    bool firstCommandAfterOpen_ = false;
 
     void configureSerialPort();
     std::string readResponse();
