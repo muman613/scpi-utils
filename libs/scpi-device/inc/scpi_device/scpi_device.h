@@ -34,8 +34,14 @@ enum class DvmFunction {
     FourWireResistance,
     Frequency,
     Period,
+    Capacitance,
     Continuity,
     Diode,
+};
+
+enum class DvmDisplay {
+    Main,
+    Secondary,
 };
 
 struct SerialOptions {
@@ -108,9 +114,15 @@ public:
     void clearStatus();
 
     void configureDvm(DvmFunction function);
+    void configureDvm(DvmFunction function, const std::string &range);
     void configureDvm(DvmFunction function, double range, double resolution);
+    void setDvmDisplay(DvmDisplay display, DvmFunction function);
+    void disableSecondaryDvmDisplay();
     std::string read();
     std::string measure(DvmFunction function);
+    std::string measureDisplays();
+    std::string measureMainDisplay();
+    std::string measureSecondaryDisplay();
     void initiate();
     std::string fetch();
 
@@ -131,6 +143,7 @@ private:
 };
 
 std::string toScpiFunction(DvmFunction function);
+std::string toScpiDisplayFunction(DvmFunction function);
 std::optional<ScpiIdentity> parseScpiIdentity(const std::string &identity);
 bool isValidScpiIdentity(const std::string &identity);
 

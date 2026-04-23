@@ -1,7 +1,9 @@
 #include "scpi_device/scpi_device.h"
 
 #include <chrono>
+#include <cctype>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -17,12 +19,121 @@ void printUsage() {
         << "  scpi-util [-v] devices\n"
         << "  scpi-util [-v] list\n"
         << "  scpi-util [-v] scan\n"
+        << "  scpi-util [-v] dvm <device-name> configure <function> [--range <value|AUTO|MIN|MAX|DEF>]\n"
+        << "  scpi-util [-v] dvm <device-name> display <main|secondary> <function|none>\n"
+        << "  scpi-util [-v] dvm <device-name> capture <function> [--range <value|AUTO|MIN|MAX|DEF>]\n"
+        << "  scpi-util [-v] dvm <device-name> read [main|secondary|both]\n"
         << "\n"
         << "Add options:\n"
         << "  --baud <rate>\n"
         << "  --read-timeout <milliseconds>\n"
         << "  --write-timeout <milliseconds>\n"
         << "  --line-ending <lf|crlf|cr|literal>\n";
+}
+
+std::string lowerAscii(std::string value) {
+    for (char &ch : value) {
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+    return value;
+}
+
+std::string upperAscii(std::string value) {
+    for (char &ch : value) {
+        ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    }
+    return value;
+}
+
+scpi::DvmFunction parseDvmFunction(const std::string &value) {
+    const std::string function = lowerAscii(value);
+
+    if (function == "vdc" || function == "dcv" || function == "dc-voltage" ||
+        function == "voltage-dc" || function == "volt:dc") {
+        return scpi::DvmFunction::DcVoltage;
+    }
+    if (function == "vac" || function == "acv" || function == "ac-voltage" ||
+        function == "voltage-ac" || function == "volt:ac") {
+        return scpi::DvmFunction::AcVoltage;
+    }
+    if (function == "idc" || function == "dci" || function == "dc-current" ||
+        function == "current-dc" || function == "curr:dc") {
+        return scpi::DvmFunction::DcCurrent;
+    }
+    if (function == "iac" || function == "aci" || function == "ac-current" ||
+        function == "current-ac" || function == "curr:ac") {
+        return scpi::DvmFunction::AcCurrent;
+    }
+    if (function == "res" || function == "resistance" || function == "ohm" ||
+        function == "ohms") {
+        return scpi::DvmFunction::Resistance;
+    }
+    if (function == "fres" || function == "4w-resistance" || function == "four-wire-resistance") {
+        return scpi::DvmFunction::FourWireResistance;
+    }
+    if (function == "freq" || function == "frequency") {
+        return scpi::DvmFunction::Frequency;
+    }
+    if (function == "per" || function == "period") {
+        return scpi::DvmFunction::Period;
+    }
+    if (function == "cap" || function == "capacitance") {
+        return scpi::DvmFunction::Capacitance;
+    }
+    if (function == "cont" || function == "continuity") {
+        return scpi::DvmFunction::Continuity;
+    }
+    if (function == "diod" || function == "diode") {
+        return scpi::DvmFunction::Diode;
+    }
+
+    throw std::invalid_argument("unknown DVM function: " + value);
+}
+
+scpi::DvmDisplay parseDvmDisplay(const std::string &value) {
+    const std::string display = lowerAscii(value);
+    if (display == "main" || display == "1") {
+        return scpi::DvmDisplay::Main;
+    }
+    if (display == "secondary" || display == "sub" || display == "2") {
+        return scpi::DvmDisplay::Secondary;
+    }
+    throw std::invalid_argument("unknown DVM display: " + value);
+}
+
+std::optional<std::string> parseRangeOption(
+    const std::vector<std::string> &args,
+    std::size_t firstOptionIndex) {
+    std::optional<std::string> range;
+
+    for (std::size_t index = firstOptionIndex; index < args.size(); ++index) {
+        const std::string &option = args[index];
+        if (option != "--range") {
+            throw std::invalid_argument("unknown DVM option: " + option);
+        }
+        if (index + 1 >= args.size()) {
+            throw std::invalid_argument("missing value for " + option);
+        }
+
+        std::string value = args[++index];
+        const std::string normalized = lowerAscii(value);
+        if (normalized == "auto" || normalized == "min" || normalized == "minimum" ||
+            normalized == "max" || normalized == "maximum" || normalized == "def" ||
+            normalized == "default") {
+            if (normalized == "minimum") {
+                value = "MIN";
+            } else if (normalized == "maximum") {
+                value = "MAX";
+            } else if (normalized == "default") {
+                value = "DEF";
+            } else {
+                value = upperAscii(value);
+            }
+        }
+        range = value;
+    }
+
+    return range;
 }
 
 int parseIntOption(const std::string &name, const std::string &value) {
@@ -242,6 +353,103 @@ int scanDevices(bool verbose) {
     return 0;
 }
 
+scpi::ScpiDevice openRegisteredDevice(const std::string &name) {
+    scpi::DeviceRegistry registry;
+    const auto device = registry.getDevice(name);
+    if (!device) {
+        throw std::invalid_argument("device not registered: " + name);
+    }
+    return scpi::ScpiDevice(*device);
+}
+
+int dvmCommand(const std::vector<std::string> &args) {
+    if (args.size() < 4) {
+        printUsage();
+        return 2;
+    }
+
+    const std::string deviceName = args[2];
+    const std::string command = args[3];
+    scpi::ScpiDevice device = openRegisteredDevice(deviceName);
+
+    if (command == "configure") {
+        if (args.size() < 5) {
+            printUsage();
+            return 2;
+        }
+
+        const scpi::DvmFunction function = parseDvmFunction(args[4]);
+        const auto range = parseRangeOption(args, 5);
+        if (range) {
+            device.configureDvm(function, *range);
+        } else {
+            device.configureDvm(function);
+        }
+        device.setDvmDisplay(scpi::DvmDisplay::Main, function);
+        std::cout << "configured " << args[4] << " on main display\n";
+        return 0;
+    }
+
+    if (command == "display") {
+        if (args.size() != 6) {
+            printUsage();
+            return 2;
+        }
+
+        const scpi::DvmDisplay display = parseDvmDisplay(args[4]);
+        if (lowerAscii(args[5]) == "none") {
+            if (display != scpi::DvmDisplay::Secondary) {
+                throw std::invalid_argument("only the secondary display can be disabled");
+            }
+            device.disableSecondaryDvmDisplay();
+        } else {
+            device.setDvmDisplay(display, parseDvmFunction(args[5]));
+        }
+        std::cout << "display updated\n";
+        return 0;
+    }
+
+    if (command == "capture") {
+        if (args.size() < 5) {
+            printUsage();
+            return 2;
+        }
+
+        const scpi::DvmFunction function = parseDvmFunction(args[4]);
+        const auto range = parseRangeOption(args, 5);
+        if (range) {
+            device.configureDvm(function, *range);
+        } else {
+            device.configureDvm(function);
+        }
+        device.setDvmDisplay(scpi::DvmDisplay::Main, function);
+        std::cout << device.measureMainDisplay() << '\n';
+        return 0;
+    }
+
+    if (command == "read") {
+        const std::string display = args.size() >= 5 ? lowerAscii(args[4]) : "main";
+        if (args.size() > 5) {
+            printUsage();
+            return 2;
+        }
+
+        if (display == "main" || display == "1") {
+            std::cout << device.measureMainDisplay() << '\n';
+        } else if (display == "secondary" || display == "sub" || display == "2") {
+            std::cout << device.measureSecondaryDisplay() << '\n';
+        } else if (display == "both" || display == "all") {
+            std::cout << device.measureDisplays() << '\n';
+        } else {
+            throw std::invalid_argument("unknown DVM read display: " + display);
+        }
+        return 0;
+    }
+
+    printUsage();
+    return 2;
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -284,6 +492,9 @@ int main(int argc, char **argv) {
         }
         if (command == "scan") {
             return scanDevices(verbose);
+        }
+        if (command == "dvm") {
+            return dvmCommand(args);
         }
 
         printUsage();

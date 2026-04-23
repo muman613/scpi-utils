@@ -43,6 +43,8 @@ dvm.open();
 auto idn = dvm.identity();             // *IDN?
 dvm.configureDvm(scpi::DvmFunction::DcVoltage);
 auto value = dvm.read();               // READ?
+dvm.setDvmDisplay(scpi::DvmDisplay::Main, scpi::DvmFunction::DcVoltage);
+auto displayed = dvm.measureMainDisplay(); // MEAS1?
 ```
 
 When using a registered device, the constructor accepts the registry record and
@@ -72,15 +74,28 @@ if (registeredDevice) {
 ### DVM helpers
 
 - `configureDvm(function)` sends `CONF:<function>`.
+- `configureDvm(function, range)` sends `CONF:<function> <range>`, where
+  `range` may be a manual range value or `AUTO`, `MIN`, `MAX`, or `DEF`.
 - `configureDvm(function, range, resolution)` sends
   `CONF:<function> <range>,<resolution>`.
+- `setDvmDisplay(display, function)` sends `FUNC "<function>"` for the main
+  display or `FUNC2 "<function>"` for the secondary display.
+- `disableSecondaryDvmDisplay()` sends `FUNC2 "NONE"`.
 - `read()` sends `READ?`.
 - `measure(function)` sends `MEAS:<function>?`.
+- `measureDisplays()` sends `MEAS?`.
+- `measureMainDisplay()` sends `MEAS1?`.
+- `measureSecondaryDisplay()` sends `MEAS2?`.
 - `initiate()` sends `INIT`.
 - `fetch()` sends `FETC?`.
 
 Supported `DvmFunction` values include DC/AC voltage, DC/AC current,
-2-wire/4-wire resistance, frequency, period, continuity, and diode.
+2-wire/4-wire resistance, frequency, period, capacitance, continuity, and
+diode.
+
+For the OWON XDM1000/XDM1041/XDM2041 family, display function names are mapped
+to the manual's `FUNCtion[1|2]` values, such as `VOLT`, `VOLT AC`, `RES`,
+`CAP`, `CONT`, and `DIOD`.
 
 ## Device discovery
 

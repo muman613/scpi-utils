@@ -403,8 +403,21 @@ void ScpiDevice::configureDvm(DvmFunction function) {
     writeCommand("CONF:" + toScpiFunction(function));
 }
 
+void ScpiDevice::configureDvm(DvmFunction function, const std::string &range) {
+    writeCommand("CONF:" + toScpiFunction(function) + " " + range);
+}
+
 void ScpiDevice::configureDvm(DvmFunction function, double range, double resolution) {
     writeCommand(commandWithArguments("CONF:" + toScpiFunction(function), range, resolution));
+}
+
+void ScpiDevice::setDvmDisplay(DvmDisplay display, DvmFunction function) {
+    const char *command = display == DvmDisplay::Main ? "FUNC" : "FUNC2";
+    writeCommand(std::string(command) + " \"" + toScpiDisplayFunction(function) + "\"");
+}
+
+void ScpiDevice::disableSecondaryDvmDisplay() {
+    writeCommand("FUNC2 \"NONE\"");
 }
 
 std::string ScpiDevice::read() {
@@ -413,6 +426,18 @@ std::string ScpiDevice::read() {
 
 std::string ScpiDevice::measure(DvmFunction function) {
     return query("MEAS:" + toScpiFunction(function) + "?");
+}
+
+std::string ScpiDevice::measureDisplays() {
+    return query("MEAS?");
+}
+
+std::string ScpiDevice::measureMainDisplay() {
+    return query("MEAS1?");
+}
+
+std::string ScpiDevice::measureSecondaryDisplay() {
+    return query("MEAS2?");
 }
 
 void ScpiDevice::initiate() {
@@ -572,6 +597,37 @@ std::string toScpiFunction(DvmFunction function) {
         return "FREQ";
     case DvmFunction::Period:
         return "PER";
+    case DvmFunction::Capacitance:
+        return "CAP";
+    case DvmFunction::Continuity:
+        return "CONT";
+    case DvmFunction::Diode:
+        return "DIOD";
+    }
+
+    throw std::invalid_argument("unknown DVM function");
+}
+
+std::string toScpiDisplayFunction(DvmFunction function) {
+    switch (function) {
+    case DvmFunction::DcVoltage:
+        return "VOLT";
+    case DvmFunction::AcVoltage:
+        return "VOLT AC";
+    case DvmFunction::DcCurrent:
+        return "CURR";
+    case DvmFunction::AcCurrent:
+        return "CURR AC";
+    case DvmFunction::Resistance:
+        return "RES";
+    case DvmFunction::FourWireResistance:
+        return "FRES";
+    case DvmFunction::Frequency:
+        return "FREQ";
+    case DvmFunction::Period:
+        return "PER";
+    case DvmFunction::Capacitance:
+        return "CAP";
     case DvmFunction::Continuity:
         return "CONT";
     case DvmFunction::Diode:
