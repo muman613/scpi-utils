@@ -1,0 +1,10 @@
+prefix=${pcfiledir}/../..
+exec_prefix=${prefix}
+libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+
+Name: scpi-device
+Description: C++17 SCPI serial device library
+Version: @PROJECT_VERSION@
+Libs: -L${libdir} -lscpi-device
+Cflags: -I${includedir}

@@ -19,6 +19,23 @@ cmake -S . -B build
 cmake --build build
 ```
 
+## Install
+
+Install the library, headers, CMake package files, and `pkg-config` metadata:
+
+```sh
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake --build build
+cmake --install build
+```
+
+The install provides:
+
+- `lib/libscpi-device.a`
+- `include/scpi_device/scpi_device.h`
+- `lib/cmake/scpi-device/scpi-deviceConfig.cmake`
+- `lib/pkgconfig/scpi-device.pc`
+
 ## CLI
 
 The CLI executable is `scpi-util`.
