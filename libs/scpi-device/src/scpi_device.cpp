@@ -146,6 +146,10 @@ SerialOptions serialOptionsFromJson(const nlohmann::json &json) {
 
 } // namespace
 
+const char *version() {
+    return SCPI_DEVICE_VERSION;
+}
+
 DeviceRegistry::DeviceRegistry()
     : storagePath_(defaultStoragePath()) {
     load();

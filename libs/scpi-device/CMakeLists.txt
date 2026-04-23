@@ -19,6 +19,7 @@ target_include_directories(scpi-device
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
+target_compile_definitions(scpi-device PRIVATE SCPI_DEVICE_VERSION="${PROJECT_VERSION}")
 target_compile_features(scpi-device PUBLIC cxx_std_17)
 target_link_libraries(scpi-device PRIVATE nlohmann_json::nlohmann_json)
 

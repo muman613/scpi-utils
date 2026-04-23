@@ -147,5 +147,6 @@ std::string toScpiFunction(DvmFunction function);
 std::string toScpiDisplayFunction(DvmFunction function);
 std::optional<ScpiIdentity> parseScpiIdentity(const std::string &identity);
 bool isValidScpiIdentity(const std::string &identity);
+const char *version();
 
 } // namespace scpi

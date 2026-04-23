@@ -13,6 +13,8 @@ namespace {
 void printUsage() {
     std::cerr
         << "Usage:\n"
+        << "  scpi-util --version\n"
+        << "  scpi-util version\n"
         << "  scpi-util [-v] add <device-name> <serial-port-device> [options]\n"
         << "  scpi-util [-v] rm <device-name>\n"
         << "  scpi-util [-v] info <device-name>\n"
@@ -29,6 +31,12 @@ void printUsage() {
         << "  --read-timeout <milliseconds>\n"
         << "  --write-timeout <milliseconds>\n"
         << "  --line-ending <lf|crlf|cr|literal>\n";
+}
+
+int printVersion() {
+    std::cout << "scpi-util " << scpi::version() << '\n';
+    std::cout << "scpi-device " << scpi::version() << '\n';
+    return 0;
 }
 
 std::string lowerAscii(std::string value) {
@@ -475,6 +483,9 @@ int main(int argc, char **argv) {
     try {
         const std::string command = args[1];
 
+        if (command == "--version" || command == "version") {
+            return printVersion();
+        }
         if (command == "add") {
             return addDevice(args);
         }
