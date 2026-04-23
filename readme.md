@@ -1,6 +1,16 @@
 # scpi-utils
 
-Utilities for USB serial SCPI instruments.
+`scpi-utils` provides command-line tools and a small C++ library for working
+with USB serial SCPI instruments. The project currently supports discovering
+SCPI devices, registering stable serial-port aliases, querying instrument
+identity, and controlling DVM-style measurements such as configuring and
+reading voltage, resistance, capacitance, continuity, and diode modes.
+
+This project is also the basic framework for supporting an engineering bench
+full of SCPI equipment. The current DVM support establishes the device registry,
+serial transport, command/query helpers, and CLI shape that can be extended to
+other common bench instruments such as oscilloscopes and programmable power
+supplies.
 
 ## Build
 
