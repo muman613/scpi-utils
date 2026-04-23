@@ -18,6 +18,29 @@ Namespace:
 namespace scpi
 ```
 
+## Install and Client Use
+
+Install with CMake:
+
+```sh
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake --build build
+cmake --install build
+```
+
+With CMake clients:
+
+```cmake
+find_package(scpi-device CONFIG REQUIRED)
+target_link_libraries(my-app PRIVATE scpi::device)
+```
+
+With `pkg-config` clients:
+
+```sh
+pkg-config --cflags --libs scpi-device
+```
+
 ## SerialOptions
 
 ```cpp
