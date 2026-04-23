@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -23,6 +24,9 @@
 
 namespace scpi {
 namespace {
+
+constexpr auto kPostOpenSettleDelay = std::chrono::milliseconds(250);
+constexpr int kFirstQueryRetryCount = 2;
 
 speed_t baudToTermios(int baudRate) {
     switch (baudRate) {
@@ -57,6 +61,33 @@ int timeoutMs(std::chrono::milliseconds timeout) {
         return std::numeric_limits<int>::max();
     }
     return static_cast<int>(timeout.count());
+}
+
+std::chrono::milliseconds postOpenSettleDelay() {
+    if (const char *value = std::getenv("SCPI_DEVICE_OPEN_SETTLE_MS")) {
+        if (*value != '\0') {
+            char *end = nullptr;
+            const long parsed = std::strtol(value, &end, 10);
+            if (end != value && *end == '\0' && parsed >= 0) {
+                return std::chrono::milliseconds(parsed);
+            }
+        }
+    }
+    return kPostOpenSettleDelay;
+}
+
+int firstQueryRetryCount() {
+    if (const char *value = std::getenv("SCPI_DEVICE_OPEN_RETRIES")) {
+        if (*value != '\0') {
+            char *end = nullptr;
+            const long parsed = std::strtol(value, &end, 10);
+            if (end != value && *end == '\0' && parsed >= 0 &&
+                parsed <= std::numeric_limits<int>::max()) {
+                return static_cast<int>(parsed);
+            }
+        }
+    }
+    return kFirstQueryRetryCount;
 }
 
 std::string trimResponse(std::string value) {
@@ -323,6 +354,10 @@ void ScpiDevice::open() {
 
     try {
         configureSerialPort();
+        // Some USB serial bridges briefly toggle modem-control state on open/close.
+        // Give the attached instrument a short settle window before the first command.
+        std::this_thread::sleep_for(postOpenSettleDelay());
+        firstCommandAfterOpen_ = true;
     } catch (...) {
         close();
         throw;
@@ -340,6 +375,7 @@ void ScpiDevice::close() {
         ::close(fd_);
         fd_ = -1;
     }
+    firstCommandAfterOpen_ = false;
 }
 
 bool ScpiDevice::isOpen() const {
@@ -383,8 +419,29 @@ void ScpiDevice::writeCommand(const std::string &command) {
 }
 
 std::string ScpiDevice::query(const std::string &command) {
-    writeCommand(command);
-    return readResponse();
+    const bool retryOnTimeout = firstCommandAfterOpen_;
+    firstCommandAfterOpen_ = false;
+
+    const int maxAttempts = retryOnTimeout ? 1 + firstQueryRetryCount() : 1;
+    for (int attempt = 0; attempt < maxAttempts; ++attempt) {
+        try {
+            writeCommand(command);
+            return readResponse();
+        } catch (const std::runtime_error &error) {
+            const std::string message = error.what();
+            const bool retryable = message == "timeout reading from " + port_ ||
+                                   message == "connection closed while reading from " + port_;
+            if (attempt + 1 >= maxAttempts || !retryable) {
+                throw;
+            }
+
+            close();
+            open();
+            firstCommandAfterOpen_ = false;
+        }
+    }
+
+    throw std::logic_error("unreachable query retry state");
 }
 
 std::string ScpiDevice::identity() {
@@ -515,6 +572,7 @@ void ScpiDevice::configureSerialPort() {
 
     ::cfmakeraw(&tty);
     tty.c_cflag |= static_cast<tcflag_t>(CLOCAL | CREAD);
+    tty.c_cflag &= static_cast<tcflag_t>(~HUPCL);
     tty.c_cflag &= static_cast<tcflag_t>(~PARENB);
     tty.c_cflag &= static_cast<tcflag_t>(~CSTOPB);
     tty.c_cflag &= static_cast<tcflag_t>(~CSIZE);
@@ -532,7 +590,7 @@ void ScpiDevice::configureSerialPort() {
         throwSystemError("tcsetattr failed for " + port_);
     }
 
-    ::tcflush(fd_, TCIOFLUSH);
+    ::tcflush(fd_, TCIFLUSH);
 }
 
 std::string ScpiDevice::readResponse() {
@@ -558,6 +616,13 @@ std::string ScpiDevice::readResponse() {
             }
             break;
         }
+        if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0 &&
+            (descriptor.revents & POLLIN) == 0) {
+            if (response.empty()) {
+                throw std::runtime_error("connection closed while reading from " + port_);
+            }
+            break;
+        }
 
         const ssize_t count = ::read(fd_, buffer, sizeof(buffer));
         if (count < 0) {
@@ -567,6 +632,9 @@ std::string ScpiDevice::readResponse() {
             throwSystemError("read failed for " + port_);
         }
         if (count == 0) {
+            if (response.empty()) {
+                throw std::runtime_error("connection closed while reading from " + port_);
+            }
             break;
         }
 
