@@ -3,8 +3,9 @@
 `scpi-utils` provides command-line tools and a small C++ library for working
 with USB serial SCPI instruments. The project currently supports discovering
 SCPI devices, registering stable serial-port aliases, querying instrument
-identity, and controlling DVM-style measurements such as configuring and
-reading voltage, resistance, capacitance, continuity, and diode modes.
+identity, controlling DVM-style measurements such as configuring and reading
+voltage, resistance, capacitance, continuity, and diode modes, and exposing a
+new D-Bus service for registry and live device control.
 
 This project is also the basic framework for supporting an engineering bench
 full of SCPI equipment. The current DVM support establishes the device registry,
@@ -36,23 +37,58 @@ The install provides:
 - `lib/cmake/scpi-device/scpi-deviceConfig.cmake`
 - `lib/pkgconfig/scpi-device.pc`
 
-## CLI
+## D-Bus Service
 
-The CLI executable is `scpi-util`.
+The repository now includes a `scpi-service` executable that exposes two
+interfaces on D-Bus:
+
+- `org.scpi.Registry`
+- `org.scpi.DeviceControl`
+
+The introspection XML for the service contract lives at:
+
+```text
+dbus/scpi-service.xml
+```
+
+For development, the service defaults to the session bus:
 
 ```sh
-scpi-util add <device-name> <serial-port-device> [options]
-scpi-util rm <device-name>
-scpi-util info <device-name>
-scpi-util devices
-scpi-util list
-scpi-util scan
-scpi-util -v scan
-scpi-util dvm <device-name> configure <function> [--range <value|AUTO|MIN|MAX|DEF>]
-scpi-util dvm <device-name> display <main|secondary> <function|none>
-scpi-util dvm <device-name> capture <function> [--range <value|AUTO|MIN|MAX|DEF>]
-scpi-util dvm <device-name> read [main|secondary|both]
+scpi-service --session
 ```
+
+To use the system bus instead:
+
+```sh
+scpi-service --system
+```
+
+The service contract is the XML file above. The build uses
+`sdbus-c++-xml2cpp` to generate adaptor and proxy headers from that XML, and
+`scpi-service` implements the generated adaptor interfaces.
+
+## CLI
+
+The CLI executable is `scpi-util`. It now acts as a D-Bus client for
+`scpi-service` rather than opening serial devices directly, so the service must
+be running on the selected bus before most commands will succeed.
+
+```sh
+scpi-util [--session|--system] add <device-name> <serial-port-device> [options]
+scpi-util [--session|--system] rm <device-name>
+scpi-util [--session|--system] info <device-name>
+scpi-util [--session|--system] devices
+scpi-util [--session|--system] list
+scpi-util [--session|--system] scan
+scpi-util [--session|--system] -v scan
+scpi-util [--session|--system] dvm <device-name> configure <function> [--range <value|AUTO|MIN|MAX|DEF>]
+scpi-util [--session|--system] dvm <device-name> display <main|secondary> <function|none>
+scpi-util [--session|--system] dvm <device-name> capture <function> [--range <value|AUTO|MIN|MAX|DEF>]
+scpi-util [--session|--system] dvm <device-name> read [main|secondary|both]
+```
+
+Bus selection defaults to the session bus. Use `--system` if `scpi-service`
+was started on the system bus.
 
 Add options:
 

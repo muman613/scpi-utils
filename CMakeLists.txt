@@ -12,3 +12,4 @@ include(CTest)
 
 add_subdirectory(libs/scpi-device)
 add_subdirectory(apps/scpi-util)
+add_subdirectory(apps/scpi-service)
