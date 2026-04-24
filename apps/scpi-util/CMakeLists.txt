@@ -29,6 +29,7 @@ target_link_libraries(scpi-util
 )
 
 target_include_directories(scpi-util PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+target_compile_definitions(scpi-util PRIVATE SCPI_UTIL_VERSION="${SCPI_UTIL_VERSION}")
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(scpi-util PRIVATE -Wall -Wextra -Wpedantic)

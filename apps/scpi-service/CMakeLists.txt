@@ -34,6 +34,7 @@ target_link_libraries(scpi-service
 
 target_compile_features(scpi-service PRIVATE cxx_std_17)
 target_include_directories(scpi-service PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+target_compile_definitions(scpi-service PRIVATE SCPI_SERVICE_VERSION="${SCPI_SERVICE_VERSION}")
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(scpi-service PRIVATE -Wall -Wextra -Wpedantic)

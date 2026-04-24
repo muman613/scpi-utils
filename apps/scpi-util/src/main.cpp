@@ -57,7 +57,7 @@ void printUsage() {
 }
 
 int printVersion() {
-    std::cout << "scpi-util " << scpi::version() << '\n';
+    std::cout << "scpi-util " << SCPI_UTIL_VERSION << '\n';
     std::cout << "scpi-device " << scpi::version() << '\n';
     return 0;
 }

@@ -5,6 +5,6 @@ includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
 
 Name: scpi-device
 Description: C++17 SCPI serial device library
-Version: @PROJECT_VERSION@
+Version: @SCPI_DEVICE_VERSION@
 Libs: -L${libdir} -lscpi-device
 Cflags: -I${includedir}

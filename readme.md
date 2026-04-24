@@ -138,6 +138,36 @@ $HOME/.config/scpi-utils/devices.json
 
 Prefer stable `/dev/serial/by-id/...` symlinks when registering devices.
 
+## Serial Smoke Test
+
+`scpi-smoke` opens a serial SCPI device directly and repeatedly sends `*IDN?`
+at a fixed rate. It is intended for bench investigation of intermittent serial
+timeouts and is not part of the D-Bus service path. The default baud rate is
+115200.
+
+Example:
+
+```sh
+scpi-smoke --port /dev/serial/by-id/usb-example \
+  --baud 115200 \
+  --read-timeout 1000 \
+  --write-timeout 1000 \
+  --settle-ms 500 \
+  --interval-ms 1000 \
+  --count 1000
+```
+
+Use `--duration-ms <milliseconds>` instead of, or together with, `--count` for
+time-bounded runs. `--reopen-on-error` closes and reopens the port after a
+failed query, which can help compare persistent-open behavior with recovery by
+reopen. If a query runs past the requested interval, the next query is delayed
+by one full interval instead of being sent immediately to catch up. The smoke
+test disables first-query-after-open retries by default so transient reopen
+failures remain visible; use `--open-retries <retries>` to enable them. Serial
+queries use a blocking `read(2)` loop by default, reading until newline or the
+termios read timeout. Use `--nonblocking-io` to compare against the older
+poll/nonblocking serial path.
+
 ## DVM Capture
 
 The `dvm` commands follow the OWON XDM1000/XDM1041/XDM2041 SCPI manual:

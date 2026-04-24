@@ -493,7 +493,14 @@ bool useSystemBus(int argc, char **argv) {
 void printUsage(const char *programName) {
     std::cerr
         << "Usage:\n"
-        << "  " << programName << " [--session|--system]\n";
+        << "  " << programName << " [--session|--system]\n"
+        << "  " << programName << " --version\n";
+}
+
+int printVersion() {
+    std::cout << "scpi-service " << SCPI_SERVICE_VERSION << '\n';
+    std::cout << "scpi-device " << scpi::version() << '\n';
+    return 0;
 }
 
 } // namespace
@@ -504,6 +511,9 @@ int main(int argc, char **argv) {
         if (arg == "--help" || arg == "-h") {
             printUsage(argv[0]);
             return 0;
+        }
+        if (arg == "--version" || arg == "version") {
+            return printVersion();
         }
         if (arg != "--session" && arg != "--system") {
             printUsage(argv[0]);

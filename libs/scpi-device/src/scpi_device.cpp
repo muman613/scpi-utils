@@ -63,6 +63,18 @@ int timeoutMs(std::chrono::milliseconds timeout) {
     return static_cast<int>(timeout.count());
 }
 
+cc_t timeoutDeciseconds(std::chrono::milliseconds timeout) {
+    if (timeout.count() <= 0) {
+        return 0;
+    }
+
+    const auto deciseconds = (timeout.count() + 99) / 100;
+    if (deciseconds > std::numeric_limits<cc_t>::max()) {
+        return std::numeric_limits<cc_t>::max();
+    }
+    return static_cast<cc_t>(deciseconds);
+}
+
 std::chrono::milliseconds postOpenSettleDelay() {
     if (const char *value = std::getenv("SCPI_DEVICE_OPEN_SETTLE_MS")) {
         if (*value != '\0') {
@@ -128,6 +140,7 @@ nlohmann::json serialOptionsToJson(const SerialOptions &options) {
         {"readTimeoutMs", options.readTimeout.count()},
         {"writeTimeoutMs", options.writeTimeout.count()},
         {"lineEnding", options.lineEnding},
+        {"blockingIo", options.blockingIo},
     };
 }
 
@@ -141,6 +154,7 @@ SerialOptions serialOptionsFromJson(const nlohmann::json &json) {
         "writeTimeoutMs",
         options.writeTimeout.count()));
     options.lineEnding = json.value("lineEnding", options.lineEnding);
+    options.blockingIo = json.value("blockingIo", options.blockingIo);
     return options;
 }
 
@@ -351,7 +365,12 @@ void ScpiDevice::open() {
     }
 
     close();
-    fd_ = ::open(port_.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
+    int flags = O_RDWR | O_NOCTTY;
+    if (!options_.blockingIo) {
+        flags |= O_NONBLOCK;
+    }
+
+    fd_ = ::open(port_.c_str(), flags);
     if (fd_ < 0) {
         throwSystemError("failed to open " + port_);
     }
@@ -582,8 +601,13 @@ void ScpiDevice::configureSerialPort() {
     tty.c_cflag &= static_cast<tcflag_t>(~CSIZE);
     tty.c_cflag |= CS8;
     tty.c_cflag &= static_cast<tcflag_t>(~CRTSCTS);
-    tty.c_cc[VMIN] = 0;
-    tty.c_cc[VTIME] = 0;
+    if (options_.blockingIo) {
+        tty.c_cc[VMIN] = 0;
+        tty.c_cc[VTIME] = timeoutDeciseconds(options_.readTimeout);
+    } else {
+        tty.c_cc[VMIN] = 0;
+        tty.c_cc[VTIME] = 0;
+    }
 
     const speed_t baud = baudToTermios(options_.baudRate);
     if (::cfsetispeed(&tty, baud) != 0 || ::cfsetospeed(&tty, baud) != 0) {
@@ -604,6 +628,31 @@ std::string ScpiDevice::readResponse() {
 
     std::string response;
     char buffer[256]{};
+
+    if (options_.blockingIo) {
+        while (true) {
+            const ssize_t count = ::read(fd_, buffer, sizeof(buffer));
+            if (count < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                throwSystemError("read failed for " + port_);
+            }
+            if (count == 0) {
+                if (response.empty()) {
+                    throw std::runtime_error("timeout reading from " + port_);
+                }
+                break;
+            }
+
+            response.append(buffer, static_cast<std::size_t>(count));
+            if (response.find('\n') != std::string::npos) {
+                break;
+            }
+        }
+
+        return trimResponse(response);
+    }
 
     while (true) {
         pollfd descriptor{fd_, POLLIN, 0};

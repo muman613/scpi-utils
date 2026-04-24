@@ -109,6 +109,7 @@ void testIdentityQueryRoundTrip() {
     options.baudRate = 115200;
     options.readTimeout = 500ms;
     options.writeTimeout = 500ms;
+    options.blockingIo = false;
 
     scpi::ScpiDevice device(pty.slavePath(), options);
     device.open();
@@ -116,6 +117,34 @@ void testIdentityQueryRoundTrip() {
 
     deviceThread.join();
     require(identity == "OWON,XDM1041,24152470,V4.3.0,3", "unexpected identity: " + identity);
+}
+
+void testBlockingIdentityQueryRoundTrip() {
+    PtyPair pty;
+    const int heldSlave = pty.releaseSlave();
+    ::close(heldSlave);
+
+    std::thread deviceThread([masterFd = pty.masterFd()]() {
+        const std::string command = readUntilNewline(masterFd);
+        require(command == "*IDN?\n", "unexpected command: " + command);
+
+        const std::string response = "OWON,XDM1041,24152470,V4.3.0,3\n";
+        const ssize_t written = ::write(masterFd, response.data(), response.size());
+        require(written == static_cast<ssize_t>(response.size()), "short write");
+    });
+
+    scpi::SerialOptions options;
+    options.baudRate = 115200;
+    options.readTimeout = 500ms;
+    options.writeTimeout = 500ms;
+    options.blockingIo = true;
+
+    scpi::ScpiDevice device(pty.slavePath(), options);
+    device.open();
+    const std::string identity = device.identity();
+
+    deviceThread.join();
+    require(identity == "OWON,XDM1041,24152470,V4.3.0,3", "unexpected blocking identity: " + identity);
 }
 
 void testOpenSettlesBeforeFirstWrite() {
@@ -183,6 +212,7 @@ void testFirstQueryTimeoutIsRetriedAfterOpen() {
 int main() {
     try {
         testIdentityQueryRoundTrip();
+        testBlockingIdentityQueryRoundTrip();
         testOpenSettlesBeforeFirstWrite();
         testFirstQueryTimeoutIsRetriedAfterOpen();
         return 0;

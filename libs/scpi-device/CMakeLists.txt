@@ -19,7 +19,7 @@ target_include_directories(scpi-device
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
-target_compile_definitions(scpi-device PRIVATE SCPI_DEVICE_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(scpi-device PRIVATE SCPI_DEVICE_VERSION="${SCPI_DEVICE_VERSION}")
 target_compile_features(scpi-device PUBLIC cxx_std_17)
 target_link_libraries(scpi-device PRIVATE nlohmann_json::nlohmann_json)
 
@@ -35,7 +35,7 @@ configure_package_config_file(
 
 write_basic_package_version_file(
     ${CMAKE_CURRENT_BINARY_DIR}/scpi-deviceConfigVersion.cmake
-    VERSION ${PROJECT_VERSION}
+    VERSION ${SCPI_DEVICE_VERSION}
     COMPATIBILITY SameMajorVersion
 )
 

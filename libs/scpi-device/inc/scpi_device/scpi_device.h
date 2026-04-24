@@ -49,6 +49,7 @@ struct SerialOptions {
     std::chrono::milliseconds readTimeout{1000};
     std::chrono::milliseconds writeTimeout{1000};
     std::string lineEnding = "\n";
+    bool blockingIo = true;
 };
 
 struct RegisteredDevice {
