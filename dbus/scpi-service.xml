@@ -41,6 +41,11 @@
     <signal name="DeviceRemoved">
       <arg name="name" type="s"/>
     </signal>
+
+    <signal name="SerialPortsChanged">
+      <arg name="action" type="s"/>
+      <arg name="port" type="s"/>
+    </signal>
   </interface>
 
   <interface name="org.scpi.DeviceControl">

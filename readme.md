@@ -67,6 +67,12 @@ The service contract is the XML file above. The build uses
 `sdbus-c++-xml2cpp` to generate adaptor and proxy headers from that XML, and
 `scpi-service` implements the generated adaptor interfaces.
 
+On Linux, `scpi-service` also subscribes to udev `tty` events for USB serial
+ports. Inserted or removed `/dev/ttyUSB*` and `/dev/ttyACM*` devices emit the
+`SerialPortsChanged` D-Bus signal, and registered devices backed by missing
+ports are closed and marked removed. Registered device paths should still use
+stable `/dev/serial/by-id/...` symlinks.
+
 ## CLI
 
 The CLI executable is `scpi-util`. It now acts as a D-Bus client for

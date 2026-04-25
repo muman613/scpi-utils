@@ -257,6 +257,7 @@ private:
     void onDeviceAdded(const std::string &) override {}
     void onDeviceUpdated(const std::string &) override {}
     void onDeviceRemoved(const std::string &) override {}
+    void onSerialPortsChanged(const std::string &, const std::string &) override {}
     void onDeviceStateChanged(const std::string &, const std::string &) override {}
     void onDeviceError(const std::string &, const std::string &) override {}
 };
