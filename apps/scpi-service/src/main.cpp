@@ -3,11 +3,15 @@
 
 #include <sdbus-c++/sdbus-c++.h>
 
+#include <atomic>
 #include <chrono>
 #include <cctype>
+#include <cerrno>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
+#include <filesystem>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -16,15 +20,24 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
+#ifdef SCPI_SERVICE_HAS_UDEV
+#include <fcntl.h>
+#include <libudev.h>
+#include <poll.h>
+#include <unistd.h>
+#endif
+
 namespace {
 
 constexpr const char *kServiceName = "org.scpi";
 constexpr const char *kObjectPath = "/org/scpi";
+constexpr auto kSerialPortSettleDelay = std::chrono::milliseconds(300);
 using VariantMap = std::map<std::string, sdbus::Variant>;
 using DeviceRecord = sdbus::Struct<std::string, std::string, VariantMap>;
 using ScanRecord = sdbus::Struct<std::string, std::string, bool, VariantMap>;
@@ -154,6 +167,47 @@ std::string sanitizeForDbus(const std::string &value) {
     return escaped.str();
 }
 
+bool pathExists(const std::string &path) {
+    std::error_code error;
+    return std::filesystem::exists(path, error);
+}
+
+std::vector<std::string> serialByIdPortsForDevnode(const std::string &devnode) {
+    std::vector<std::string> ports;
+
+    std::error_code error;
+    const auto devnodeTarget = std::filesystem::weakly_canonical(devnode, error);
+    if (error) {
+        return ports;
+    }
+
+    for (const auto &port : scpi::ScpiDevice::listSerialByIdDevices()) {
+        error.clear();
+        const auto portTarget = std::filesystem::weakly_canonical(port, error);
+        if (!error && portTarget == devnodeTarget) {
+            ports.push_back(port);
+        }
+    }
+
+    return ports;
+}
+
+#ifdef SCPI_SERVICE_HAS_UDEV
+bool startsWith(const std::string &value, const std::string &prefix) {
+    return value.size() >= prefix.size() &&
+           value.compare(0, prefix.size(), prefix) == 0;
+}
+
+bool isUsbSerialDevnode(const std::string &devnode) {
+    return startsWith(devnode, "/dev/ttyUSB") || startsWith(devnode, "/dev/ttyACM");
+}
+
+bool isUsbSerialTty(udev_device *device) {
+    const char *devnode = udev_device_get_devnode(device);
+    return devnode && isUsbSerialDevnode(devnode);
+}
+#endif
+
 class ScpiService
 {
 public:
@@ -161,6 +215,11 @@ public:
         : object_(sdbus::createObject(connection, kObjectPath))
         , adaptor_(*this, *object_) {
         object_->finishRegistration();
+        startSerialPortMonitor();
+    }
+
+    ~ScpiService() {
+        stopSerialPortMonitor();
     }
 
 private:
@@ -218,6 +277,7 @@ private:
         using org::scpi::Registry_adaptor::emitDeviceRemoved;
         using org::scpi::Registry_adaptor::emitDeviceUpdated;
         using org::scpi::Registry_adaptor::emitRegistryChanged;
+        using org::scpi::Registry_adaptor::emitSerialPortsChanged;
         using org::scpi::DeviceControl_adaptor::emitDeviceError;
         using org::scpi::DeviceControl_adaptor::emitDeviceStateChanged;
 
@@ -234,6 +294,11 @@ private:
     std::unique_ptr<sdbus::IObject> object_;
     ServiceAdaptor adaptor_;
     std::unordered_map<std::string, ManagedDevice> openDevices_;
+#ifdef SCPI_SERVICE_HAS_UDEV
+    std::atomic<bool> stopSerialMonitor_{false};
+    std::thread serialMonitorThread_;
+    int serialMonitorWakePipe_[2] = {-1, -1};
+#endif
 
     scpi::RegisteredDevice requireRegisteredDevice(const std::string &name) {
         scpi::DeviceRegistry registry;
@@ -255,6 +320,169 @@ private:
         }
         return *entry.device;
     }
+
+    void closeMissingOpenDevices() {
+        std::vector<std::string> closedDevices;
+
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (auto it = openDevices_.begin(); it != openDevices_.end();) {
+                if (!pathExists(it->second.registration.port)) {
+                    closedDevices.push_back(it->first);
+                    it = openDevices_.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+
+        for (const auto &name : closedDevices) {
+            adaptor_.emitDeviceStateChanged(name, "removed");
+        }
+    }
+
+    void emitAvailableRegisteredDevices() {
+        scpi::DeviceRegistry registry;
+        for (const auto &device : registry.devices()) {
+            if (pathExists(device.port)) {
+                adaptor_.emitDeviceStateChanged(device.name, "available");
+            }
+        }
+    }
+
+    void handleSerialPortChange(const std::string &action, const std::string &port) {
+        std::vector<std::string> signalPorts{port};
+
+        if (action == "add") {
+            std::this_thread::sleep_for(kSerialPortSettleDelay);
+            signalPorts = serialByIdPortsForDevnode(port);
+            if (signalPorts.empty()) {
+                signalPorts.push_back(port);
+            }
+            emitAvailableRegisteredDevices();
+        } else if (action == "remove") {
+            closeMissingOpenDevices();
+        }
+
+        for (const auto &signalPort : signalPorts) {
+            adaptor_.emitSerialPortsChanged(action, signalPort);
+        }
+    }
+
+#ifdef SCPI_SERVICE_HAS_UDEV
+    void startSerialPortMonitor() {
+        if (::pipe(serialMonitorWakePipe_) != 0) {
+            std::cerr << "warning: failed to create udev wake pipe: " << std::strerror(errno) << '\n';
+            serialMonitorWakePipe_[0] = -1;
+            serialMonitorWakePipe_[1] = -1;
+            return;
+        }
+
+        for (int fd : serialMonitorWakePipe_) {
+            const int flags = ::fcntl(fd, F_GETFD);
+            if (flags >= 0) {
+                (void)::fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+            }
+        }
+
+        stopSerialMonitor_ = false;
+        serialMonitorThread_ = std::thread([this] { serialPortMonitorLoop(); });
+    }
+
+    void stopSerialPortMonitor() {
+        stopSerialMonitor_ = true;
+
+        if (serialMonitorWakePipe_[1] >= 0) {
+            const char value = 'x';
+            const ssize_t written = ::write(serialMonitorWakePipe_[1], &value, 1);
+            (void)written;
+        }
+
+        if (serialMonitorThread_.joinable()) {
+            serialMonitorThread_.join();
+        }
+
+        for (int &fd : serialMonitorWakePipe_) {
+            if (fd >= 0) {
+                ::close(fd);
+                fd = -1;
+            }
+        }
+    }
+
+    void serialPortMonitorLoop() {
+        udev *udevContext = udev_new();
+        if (!udevContext) {
+            std::cerr << "warning: failed to initialize udev monitor\n";
+            return;
+        }
+
+        udev_monitor *monitor = udev_monitor_new_from_netlink(udevContext, "udev");
+        if (!monitor) {
+            std::cerr << "warning: failed to create udev monitor\n";
+            udev_unref(udevContext);
+            return;
+        }
+
+        if (udev_monitor_filter_add_match_subsystem_devtype(monitor, "tty", nullptr) < 0 ||
+            udev_monitor_enable_receiving(monitor) < 0) {
+            std::cerr << "warning: failed to enable udev tty monitor\n";
+            udev_monitor_unref(monitor);
+            udev_unref(udevContext);
+            return;
+        }
+
+        const int monitorFd = udev_monitor_get_fd(monitor);
+        pollfd fds[] = {
+            {monitorFd, POLLIN, 0},
+            {serialMonitorWakePipe_[0], POLLIN, 0},
+        };
+
+        while (!stopSerialMonitor_) {
+            const int rc = ::poll(fds, 2, -1);
+            if (rc < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                std::cerr << "warning: udev monitor poll failed: " << std::strerror(errno) << '\n';
+                break;
+            }
+
+            if (fds[1].revents & POLLIN) {
+                break;
+            }
+
+            if (fds[0].revents & POLLIN) {
+                handlePendingUdevEvent(monitor);
+            }
+        }
+
+        udev_monitor_unref(monitor);
+        udev_unref(udevContext);
+    }
+
+    void handlePendingUdevEvent(udev_monitor *monitor) {
+        udev_device *device = udev_monitor_receive_device(monitor);
+        if (!device) {
+            return;
+        }
+
+        const char *actionValue = udev_device_get_action(device);
+        const char *devnodeValue = udev_device_get_devnode(device);
+
+        if (actionValue && devnodeValue && isUsbSerialTty(device)) {
+            const std::string action = actionValue;
+            if (action == "add" || action == "remove") {
+                handleSerialPortChange(action, devnodeValue);
+            }
+        }
+
+        udev_device_unref(device);
+    }
+#else
+    void startSerialPortMonitor() {}
+    void stopSerialPortMonitor() {}
+#endif
 
     void dropManagedDeviceLocked(const std::string &name) {
         openDevices_.erase(name);
