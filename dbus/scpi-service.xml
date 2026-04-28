@@ -51,6 +51,7 @@
   <interface name="org.scpi.DeviceControl">
     <method name="Open">
       <arg name="name" type="s" direction="in"/>
+      <arg name="path" type="o" direction="out"/>
     </method>
 
     <method name="Close">
@@ -127,5 +128,74 @@
       <arg name="name" type="s"/>
       <arg name="message" type="s"/>
     </signal>
+  </interface>
+
+  <interface name="org.scpi.Device">
+    <method name="Close"/>
+
+    <method name="QueryIdentity">
+      <arg name="identity" type="s" direction="out"/>
+    </method>
+
+    <method name="Type">
+      <arg name="type" type="s" direction="out"/>
+    </method>
+
+    <method name="Profile">
+      <arg name="profile" type="s" direction="out"/>
+    </method>
+
+    <method name="Capabilities">
+      <arg name="capabilities" type="as" direction="out"/>
+    </method>
+
+    <method name="WriteCommand">
+      <arg name="command" type="s" direction="in"/>
+    </method>
+
+    <method name="Query">
+      <arg name="command" type="s" direction="in"/>
+      <arg name="response" type="s" direction="out"/>
+    </method>
+
+    <method name="Reset"/>
+
+    <method name="ClearStatus"/>
+
+    <signal name="Closed"/>
+
+    <signal name="Error">
+      <arg name="message" type="s"/>
+    </signal>
+  </interface>
+
+  <interface name="org.scpi.DigitalMultimeter">
+    <method name="Configure">
+      <arg name="function" type="s" direction="in"/>
+      <arg name="range" type="s" direction="in"/>
+    </method>
+
+    <method name="ListSupportedFunctions">
+      <arg name="functions" type="as" direction="out"/>
+    </method>
+
+    <method name="ListSupportedRanges">
+      <arg name="function" type="s" direction="in"/>
+      <arg name="ranges" type="as" direction="out"/>
+    </method>
+
+    <method name="SetDisplay">
+      <arg name="display" type="s" direction="in"/>
+      <arg name="function" type="s" direction="in"/>
+    </method>
+
+    <method name="ReadDisplay">
+      <arg name="display" type="s" direction="in"/>
+      <arg name="value" type="s" direction="out"/>
+    </method>
+
+    <method name="ReadDisplays">
+      <arg name="value" type="s" direction="out"/>
+    </method>
   </interface>
 </node>

@@ -37,6 +37,8 @@ void printUsage() {
         << "  scpi-util [--session|--system] [-v] add <device-name> <serial-port-device> [options]\n"
         << "  scpi-util [--session|--system] [-v] rm <device-name>\n"
         << "  scpi-util [--session|--system] [-v] info <device-name>\n"
+        << "  scpi-util [--session|--system] [-v] open <device-name>\n"
+        << "  scpi-util [--session|--system] [-v] close <device-name>\n"
         << "  scpi-util [--session|--system] [-v] devices\n"
         << "  scpi-util [--session|--system] [-v] list\n"
         << "  scpi-util [--session|--system] [-v] scan\n"
@@ -335,6 +337,19 @@ int infoDevice(ScpiClient &client, const std::vector<std::string> &args) {
 
     std::cout << "name: " << device.get<0>() << '\n';
     std::cout << "port: " << device.get<1>() << '\n';
+    const VariantMap metadata = device.get<2>();
+    if (const auto found = metadata.find("type"); found != metadata.end()) {
+        std::cout << "type: " << found->second.get<std::string>() << '\n';
+    }
+    if (const auto found = metadata.find("profile"); found != metadata.end()) {
+        std::cout << "profile: " << found->second.get<std::string>() << '\n';
+    }
+    if (const auto found = metadata.find("identity"); found != metadata.end()) {
+        const std::string identity = found->second.get<std::string>();
+        if (!identity.empty()) {
+            std::cout << "registered-identity: " << identity << '\n';
+        }
+    }
     std::cout << "baud-rate: " << options.baudRate << '\n';
     std::cout << "read-timeout-ms: " << options.readTimeout.count() << '\n';
     std::cout << "write-timeout-ms: " << options.writeTimeout.count() << '\n';
@@ -367,9 +382,16 @@ int devicesCommand(ScpiClient &client) {
     }
 
     for (const auto &device : devices) {
-        const scpi::SerialOptions options = serialOptionsFromVariantMap(device.get<2>());
+        const VariantMap metadata = device.get<2>();
+        const scpi::SerialOptions options = serialOptionsFromVariantMap(metadata);
         std::cout << device.get<0>() << '\n';
         std::cout << "  port: " << device.get<1>() << '\n';
+        if (const auto found = metadata.find("type"); found != metadata.end()) {
+            std::cout << "  type: " << found->second.get<std::string>() << '\n';
+        }
+        if (const auto found = metadata.find("profile"); found != metadata.end()) {
+            std::cout << "  profile: " << found->second.get<std::string>() << '\n';
+        }
         std::cout << "  baud-rate: " << options.baudRate << '\n';
         std::cout << "  read-timeout-ms: " << options.readTimeout.count() << '\n';
         std::cout << "  write-timeout-ms: " << options.writeTimeout.count() << '\n';
@@ -427,6 +449,12 @@ int scanDevices(ScpiClient &client, bool verbose) {
             std::cout << result.get<0>() << '\n';
             std::cout << "  baud-rate: " << baudRate << '\n';
             std::cout << "  identity: " << result.get<1>() << '\n';
+            if (const auto found = details.find("type"); found != details.end()) {
+                std::cout << "  type: " << found->second.get<std::string>() << '\n';
+            }
+            if (const auto found = details.find("profile"); found != details.end()) {
+                std::cout << "  profile: " << found->second.get<std::string>() << '\n';
+            }
         } else if (verbose) {
             std::cout << result.get<0>() << '\n';
             const auto found = details.find("error");
@@ -442,6 +470,26 @@ int scanDevices(ScpiClient &client, bool verbose) {
         std::cout << "no SCPI devices found in /dev/serial/by-id\n";
     }
 
+    return 0;
+}
+
+int openDevice(ScpiClient &client, const std::vector<std::string> &args) {
+    if (args.size() != 3) {
+        printUsage();
+        return 2;
+    }
+
+    std::cout << client.Open(args[2]) << '\n';
+    return 0;
+}
+
+int closeDevice(ScpiClient &client, const std::vector<std::string> &args) {
+    if (args.size() != 3) {
+        printUsage();
+        return 2;
+    }
+
+    client.Close(args[2]);
     return 0;
 }
 
@@ -570,6 +618,12 @@ int main(int argc, char **argv) {
         }
         if (command == "info") {
             return infoDevice(client, args);
+        }
+        if (command == "open") {
+            return openDevice(client, args);
+        }
+        if (command == "close") {
+            return closeDevice(client, args);
         }
         if (command == "list") {
             return listIdentities(client);

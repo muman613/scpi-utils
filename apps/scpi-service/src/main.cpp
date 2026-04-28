@@ -167,6 +167,34 @@ std::string sanitizeForDbus(const std::string &value) {
     return escaped.str();
 }
 
+std::string dbusPathElement(std::string value) {
+    if (value.empty()) {
+        return "unnamed";
+    }
+
+    for (char &ch : value) {
+        const unsigned char byte = static_cast<unsigned char>(ch);
+        if (!std::isalnum(byte)) {
+            ch = '_';
+        }
+    }
+
+    if (std::isdigit(static_cast<unsigned char>(value.front()))) {
+        value.insert(value.begin(), '_');
+    }
+
+    return value;
+}
+
+VariantMap deviceMetadataToVariantMap(const scpi::RegisteredDevice &device) {
+    VariantMap values = serialOptionsToVariantMap(device.options);
+    values.emplace("identity", device.identity);
+    values.emplace("type", device.type);
+    values.emplace("profile", device.profile);
+    values.emplace("objectPath", std::string("/org/scpi/devices/") + dbusPathElement(device.name));
+    return values;
+}
+
 bool pathExists(const std::string &path) {
     std::error_code error;
     return std::filesystem::exists(path, error);
@@ -212,7 +240,8 @@ class ScpiService
 {
 public:
     explicit ScpiService(sdbus::IConnection &connection)
-        : object_(sdbus::createObject(connection, kObjectPath))
+        : connection_(connection)
+        , object_(sdbus::createObject(connection, kObjectPath))
         , adaptor_(*this, *object_) {
         object_->finishRegistration();
         startSerialPortMonitor();
@@ -243,7 +272,7 @@ private:
         }
         bool RemoveDevice(const std::string &name) override { return service_.RemoveDevice(name); }
         std::vector<ScanRecord> ScanSerialDevices() override { return service_.ScanSerialDevices(); }
-        void Open(const std::string &name) override { service_.Open(name); }
+        sdbus::ObjectPath Open(const std::string &name) override { return service_.Open(name); }
         void Close(const std::string &name) override { service_.Close(name); }
         bool IsOpen(const std::string &name) override { return service_.IsOpen(name); }
         std::string QueryIdentity(const std::string &name) override { return service_.QueryIdentity(name); }
@@ -291,11 +320,78 @@ private:
         ScpiService &service_;
     };
 
+    class LiveDeviceAdaptor : public org::scpi::Device_adaptor {
+    public:
+        LiveDeviceAdaptor(ScpiService &service, sdbus::IObject &object, std::string name)
+            : org::scpi::Device_adaptor(object)
+            , service_(service)
+            , name_(std::move(name)) {}
+        virtual ~LiveDeviceAdaptor() = default;
+
+    protected:
+        ScpiService &service_;
+        std::string name_;
+
+    private:
+        void Close() override {
+            auto &service = service_;
+            const std::string name = name_;
+            std::thread([&service, name] { service.Close(name); }).detach();
+        }
+        std::string QueryIdentity() override { return service_.QueryIdentity(name_); }
+        std::string Type() override { return service_.DeviceType(name_); }
+        std::string Profile() override { return service_.DeviceProfile(name_); }
+        std::vector<std::string> Capabilities() override { return service_.DeviceCapabilities(name_); }
+        void WriteCommand(const std::string &command) override { service_.WriteCommand(name_, command); }
+        std::string Query(const std::string &command) override { return service_.Query(name_, command); }
+        void Reset() override { service_.Reset(name_); }
+        void ClearStatus() override { service_.ClearStatus(name_); }
+
+    public:
+        using org::scpi::Device_adaptor::emitClosed;
+        using org::scpi::Device_adaptor::emitError;
+    };
+
+    class LiveDmmAdaptor
+        : public LiveDeviceAdaptor
+        , public org::scpi::DigitalMultimeter_adaptor {
+    public:
+        LiveDmmAdaptor(ScpiService &service, sdbus::IObject &object, std::string name)
+            : LiveDeviceAdaptor(service, object, name)
+            , org::scpi::DigitalMultimeter_adaptor(object) {}
+
+    private:
+        void Configure(const std::string &function, const std::string &range) override {
+            service_.ConfigureDvm(name_, function, range);
+        }
+        std::vector<std::string> ListSupportedFunctions() override {
+            return service_.ListSupportedDvmFunctions();
+        }
+        std::vector<std::string> ListSupportedRanges(const std::string &function) override {
+            return service_.ListSupportedDvmRanges(function);
+        }
+        void SetDisplay(const std::string &display, const std::string &function) override {
+            service_.SetDisplay(name_, display, function);
+        }
+        std::string ReadDisplay(const std::string &display) override {
+            return service_.ReadDisplay(name_, display);
+        }
+        std::string ReadDisplays() override { return service_.ReadDisplays(name_); }
+    };
+
+    struct LiveObject {
+        std::unique_ptr<sdbus::IObject> object;
+        std::unique_ptr<LiveDeviceAdaptor> adaptor;
+    };
+
     struct ManagedDevice {
         scpi::RegisteredDevice registration;
         std::unique_ptr<scpi::ScpiDevice> device;
+        std::string objectPath;
+        std::unique_ptr<LiveObject> liveObject;
     };
 
+    sdbus::IConnection &connection_;
     std::mutex mutex_;
     std::unique_ptr<sdbus::IObject> object_;
     ServiceAdaptor adaptor_;
@@ -315,6 +411,22 @@ private:
         return *device;
     }
 
+    std::string objectPathForName(const std::string &name) const {
+        return std::string("/org/scpi/devices/") + dbusPathElement(name);
+    }
+
+    std::unique_ptr<LiveObject> createLiveObject(const scpi::RegisteredDevice &registration) {
+        auto live = std::make_unique<LiveObject>();
+        live->object = sdbus::createObject(connection_, objectPathForName(registration.name));
+        if (registration.type == "dmm") {
+            live->adaptor = std::make_unique<LiveDmmAdaptor>(*this, *live->object, registration.name);
+        } else {
+            live->adaptor = std::make_unique<LiveDeviceAdaptor>(*this, *live->object, registration.name);
+        }
+        live->object->finishRegistration();
+        return live;
+    }
+
     scpi::ScpiDevice &getOrOpenManagedDeviceLocked(const std::string &name) {
         const auto registered = requireRegisteredDevice(name);
         auto &entry = openDevices_[name];
@@ -322,6 +434,8 @@ private:
             entry.registration = registered;
             entry.device = std::make_unique<scpi::ScpiDevice>(registered.port, registered.options);
             entry.device->open();
+            entry.objectPath = objectPathForName(name);
+            entry.liveObject = createLiveObject(registered);
             adaptor_.emitDeviceStateChanged(name, "open");
         }
         return *entry.device;
@@ -335,6 +449,9 @@ private:
             for (auto it = openDevices_.begin(); it != openDevices_.end();) {
                 if (!pathExists(it->second.registration.port)) {
                     closedDevices.push_back(it->first);
+                    if (it->second.liveObject && it->second.liveObject->adaptor) {
+                        it->second.liveObject->adaptor->emitClosed();
+                    }
                     it = openDevices_.erase(it);
                 } else {
                     ++it;
@@ -491,6 +608,10 @@ private:
 #endif
 
     void dropManagedDeviceLocked(const std::string &name) {
+        const auto found = openDevices_.find(name);
+        if (found != openDevices_.end() && found->second.liveObject && found->second.liveObject->adaptor) {
+            found->second.liveObject->adaptor->emitClosed();
+        }
         openDevices_.erase(name);
         adaptor_.emitDeviceStateChanged(name, "closed");
     }
@@ -500,7 +621,7 @@ private:
         std::vector<DeviceRecord> records;
 
         for (const auto &device : registry.devices()) {
-            records.emplace_back(device.name, device.port, serialOptionsToVariantMap(device.options));
+            records.emplace_back(device.name, device.port, deviceMetadataToVariantMap(device));
         }
 
         return records;
@@ -508,7 +629,7 @@ private:
 
     DeviceRecord GetDevice(const std::string &name) {
         const auto device = requireRegisteredDevice(name);
-        return DeviceRecord(device.name, device.port, serialOptionsToVariantMap(device.options));
+        return DeviceRecord(device.name, device.port, deviceMetadataToVariantMap(device));
     }
 
     void AddOrUpdateDevice(
@@ -517,11 +638,30 @@ private:
         const VariantMap &options) {
         scpi::DeviceRegistry registry;
         const bool existed = registry.getDevice(name).has_value();
-        registry.setDevice(name, port, serialOptionsFromVariantMap(options));
+        const scpi::SerialOptions serialOptions = serialOptionsFromVariantMap(options);
+
+        std::string identity;
+        scpi::DeviceProfile profile;
+        try {
+            scpi::ScpiDevice device(port, serialOptions);
+            device.open();
+            identity = sanitizeForDbus(device.identity());
+            profile = scpi::resolveDeviceProfile(identity);
+        } catch (const std::exception &error) {
+            throwDbusError("org.scpi.Error.IdentifyFailed", error.what());
+        }
+
+        registry.setDevice(name, port, serialOptions, identity, profile);
 
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            openDevices_.erase(name);
+            const auto found = openDevices_.find(name);
+            if (found != openDevices_.end()) {
+                if (found->second.liveObject && found->second.liveObject->adaptor) {
+                    found->second.liveObject->adaptor->emitClosed();
+                }
+                openDevices_.erase(found);
+            }
         }
 
         adaptor_.emitRegistryChanged();
@@ -541,7 +681,13 @@ private:
 
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            openDevices_.erase(name);
+            const auto found = openDevices_.find(name);
+            if (found != openDevices_.end()) {
+                if (found->second.liveObject && found->second.liveObject->adaptor) {
+                    found->second.liveObject->adaptor->emitClosed();
+                }
+                openDevices_.erase(found);
+            }
         }
 
         adaptor_.emitRegistryChanged();
@@ -559,6 +705,11 @@ private:
             if (!result.error.empty()) {
                 details.emplace("error", sanitizeForDbus(result.error));
             }
+            if (result.success) {
+                const scpi::DeviceProfile profile = scpi::resolveDeviceProfile(result.identity);
+                details.emplace("type", profile.type);
+                details.emplace("profile", profile.profile);
+            }
             records.emplace_back(
                 result.port,
                 sanitizeForDbus(result.identity),
@@ -569,16 +720,18 @@ private:
         return records;
     }
 
-    void Open(const std::string &name) {
+    sdbus::ObjectPath Open(const std::string &name) {
         std::lock_guard<std::mutex> lock(mutex_);
         try {
             (void)getOrOpenManagedDeviceLocked(name);
+            return openDevices_.at(name).objectPath;
         } catch (const sdbus::Error &) {
             throw;
         } catch (const std::exception &error) {
             adaptor_.emitDeviceError(name, error.what());
             throwDbusError("org.scpi.Error.OpenFailed", error.what());
         }
+        throw std::logic_error("unreachable open state");
     }
 
     void Close(const std::string &name) {
@@ -588,14 +741,47 @@ private:
             return;
         }
 
-        openDevices_.erase(found);
-        adaptor_.emitDeviceStateChanged(name, "closed");
+        dropManagedDeviceLocked(name);
     }
 
     bool IsOpen(const std::string &name) {
         std::lock_guard<std::mutex> lock(mutex_);
         const auto found = openDevices_.find(name);
         return found != openDevices_.end() && found->second.device && found->second.device->isOpen();
+    }
+
+    std::string DeviceType(const std::string &name) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto found = openDevices_.find(name);
+        if (found != openDevices_.end()) {
+            return found->second.registration.type;
+        }
+        return requireRegisteredDevice(name).type;
+    }
+
+    std::string DeviceProfile(const std::string &name) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto found = openDevices_.find(name);
+        if (found != openDevices_.end()) {
+            return found->second.registration.profile;
+        }
+        return requireRegisteredDevice(name).profile;
+    }
+
+    std::vector<std::string> DeviceCapabilities(const std::string &name) {
+        const std::string type = DeviceType(name);
+        if (type == "dmm") {
+            return {
+                "identity",
+                "raw-query",
+                "reset",
+                "clear-status",
+                "dmm.configure",
+                "dmm.display",
+                "dmm.read",
+            };
+        }
+        return {"identity", "raw-query", "reset", "clear-status"};
     }
 
     std::string QueryIdentity(const std::string &name) {
