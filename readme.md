@@ -37,6 +37,15 @@ The install provides:
 - `lib/cmake/scpi-device/scpi-deviceConfig.cmake`
 - `lib/pkgconfig/scpi-device.pc`
 
+To install the command-line service and utility binaries under
+`/opt/scpi-util/bin`:
+
+```sh
+sudo install -Dm755 build/apps/scpi-service/scpi-service /opt/scpi-util/bin/scpi-service
+sudo install -Dm755 build/apps/scpi-util/scpi-util /opt/scpi-util/bin/scpi-util
+sudo install -Dm755 build/apps/scpi-smoke/scpi-smoke /opt/scpi-util/bin/scpi-smoke
+```
+
 ## D-Bus Service
 
 The repository now includes a `scpi-service` executable that exposes two
@@ -62,6 +71,106 @@ To use the system bus instead:
 ```sh
 scpi-service --system
 ```
+
+### systemd user service
+
+For a per-user session bus service, install `scpi-service` somewhere on disk,
+for example `/opt/scpi-util/bin/scpi-service`, then create:
+
+```ini
+# ~/.config/systemd/user/scpi-service.service
+[Unit]
+Description=SCPI D-Bus service
+
+[Service]
+Type=dbus
+BusName=org.scpi
+ExecStart=/opt/scpi-util/bin/scpi-service --session
+Restart=on-failure
+```
+
+Enable and start it:
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now scpi-service.service
+```
+
+To let the session bus start the service on demand, also create:
+
+```ini
+# ~/.local/share/dbus-1/services/org.scpi.service
+[D-BUS Service]
+Name=org.scpi
+Exec=/opt/scpi-util/bin/scpi-service --session
+SystemdService=scpi-service.service
+```
+
+With that file installed, a `scpi-util` call on the session bus can activate the
+service automatically if it is not already running.
+
+### systemd system service
+
+For a machine-wide service on the system bus, create:
+
+```ini
+# /etc/systemd/system/scpi-service.service
+[Unit]
+Description=SCPI D-Bus service
+After=systemd-udevd.service
+
+[Service]
+Type=dbus
+BusName=org.scpi
+ExecStart=/opt/scpi-util/bin/scpi-service --system
+Restart=on-failure
+```
+
+Reload systemd and start the service:
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now scpi-service.service
+```
+
+System-bus activation additionally needs a D-Bus service file:
+
+```ini
+# /usr/share/dbus-1/system-services/org.scpi.service
+[D-BUS Service]
+Name=org.scpi
+Exec=/opt/scpi-util/bin/scpi-service --system
+User=root
+SystemdService=scpi-service.service
+```
+
+The system bus normally also requires a policy file that permits owning
+`org.scpi` and allows the users or groups that should control instruments to
+call the service. A minimal local policy for a trusted bench group could look
+like:
+
+```xml
+<!-- /etc/dbus-1/system.d/org.scpi.conf -->
+<!DOCTYPE busconfig PUBLIC
+ "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <policy user="root">
+    <allow own="org.scpi"/>
+  </policy>
+  <policy group="plugdev">
+    <allow send_destination="org.scpi"/>
+  </policy>
+</busconfig>
+```
+
+Reload the system bus after changing system-bus activation or policy files:
+
+```sh
+sudo systemctl reload dbus.service
+```
+
+Use `scpi-util --system ...` when talking to a system-bus service.
 
 The service contract is the XML file above. The build uses
 `sdbus-c++-xml2cpp` to generate adaptor and proxy headers from that XML, and
@@ -211,11 +320,20 @@ Manual range values for the requested DVM modes:
 ```text
 vdc:          500E-3, 5, 50, 500, 1000, AUTO, MIN, MAX, DEF
 vac:          500E-3, 5, 50, 500, 750, AUTO, MIN, MAX, DEF
+idc:          50E-3, 500E-3, 5, 50, 500, 1000, AUTO, MIN, MAX, DEF
+iac:          500E-3, 5, 50, 500, 750, AUTO, MIN, MAX, DEF
 resistance:   500, 5E3, 50E3, 500E3, 5E6, 50E6, 500E6, AUTO, MIN, MAX, DEF
+fres:         500, 5E3, 50E3, AUTO, MIN, MAX, DEF
 capacitance:  50E-9, 500E-9, 5E-6, 50E-6, 500E-6, 5E-3, 50E-3, AUTO, MIN, MAX, DEF
+frequency:    no range argument
+period:       no range argument
 continuity:   no range argument
 diode:        no range argument
 ```
+
+The DBus `org.scpi.DeviceControl` interface also exposes
+`ListSupportedDvmFunctions()` and `ListSupportedDvmRanges(function)` for clients
+that need to discover these values at runtime.
 
 ## Library
 

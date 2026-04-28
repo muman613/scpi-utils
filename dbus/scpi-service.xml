@@ -92,6 +92,15 @@
       <arg name="range" type="s" direction="in"/>
     </method>
 
+    <method name="ListSupportedDvmFunctions">
+      <arg name="functions" type="as" direction="out"/>
+    </method>
+
+    <method name="ListSupportedDvmRanges">
+      <arg name="function" type="s" direction="in"/>
+      <arg name="ranges" type="as" direction="out"/>
+    </method>
+
     <method name="SetDisplay">
       <arg name="name" type="s" direction="in"/>
       <arg name="display" type="s" direction="in"/>

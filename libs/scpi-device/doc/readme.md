@@ -121,6 +121,12 @@ Supported `DvmFunction` values include DC/AC voltage, DC/AC current,
 2-wire/4-wire resistance, frequency, period, capacitance, continuity, and
 diode.
 
+Use `supportedDvmFunctions()` to list the canonical function names accepted by
+the service API, and `supportedDvmRanges(function)` to list the supported range
+arguments for a function. Functions such as frequency, period, continuity, and
+diode return an empty range list because their `CONFigure` forms do not take a
+range argument.
+
 For the OWON XDM1000/XDM1041/XDM2041 family, display function names are mapped
 to the manual's `FUNCtion[1|2]` values, such as `VOLT`, `VOLT AC`, `RES`,
 `CAP`, `CONT`, and `DIOD`.

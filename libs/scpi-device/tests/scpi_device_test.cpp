@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <fcntl.h>
 #include <pty.h>
@@ -89,6 +90,48 @@ void require(bool condition, const std::string &message) {
     if (!condition) {
         throw std::runtime_error(message);
     }
+}
+
+void requireEqual(
+    const std::vector<std::string> &actual,
+    const std::vector<std::string> &expected,
+    const std::string &message) {
+    if (actual != expected) {
+        throw std::runtime_error(message);
+    }
+}
+
+void testDvmCapabilities() {
+    requireEqual(
+        scpi::supportedDvmFunctions(),
+        {
+            "vdc",
+            "vac",
+            "idc",
+            "iac",
+            "resistance",
+            "fres",
+            "frequency",
+            "period",
+            "capacitance",
+            "continuity",
+            "diode",
+        },
+        "unexpected DVM function list");
+
+    requireEqual(
+        scpi::supportedDvmRanges(scpi::DvmFunction::DcVoltage),
+        {"500E-3", "5", "50", "500", "1000", "AUTO", "MIN", "MAX", "DEF"},
+        "unexpected DC voltage ranges");
+
+    requireEqual(
+        scpi::supportedDvmRanges(scpi::DvmFunction::FourWireResistance),
+        {"500", "5E3", "50E3", "AUTO", "MIN", "MAX", "DEF"},
+        "unexpected four-wire resistance ranges");
+
+    require(
+        scpi::supportedDvmRanges(scpi::DvmFunction::Continuity).empty(),
+        "continuity should not advertise range arguments");
 }
 
 void testIdentityQueryRoundTrip() {
@@ -211,6 +254,7 @@ void testFirstQueryTimeoutIsRetriedAfterOpen() {
 
 int main() {
     try {
+        testDvmCapabilities();
         testIdentityQueryRoundTrip();
         testBlockingIdentityQueryRoundTrip();
         testOpenSettlesBeforeFirstWrite();

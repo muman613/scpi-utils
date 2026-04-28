@@ -261,6 +261,12 @@ private:
             const std::string &range) override {
             service_.ConfigureDvm(name, function, range);
         }
+        std::vector<std::string> ListSupportedDvmFunctions() override {
+            return service_.ListSupportedDvmFunctions();
+        }
+        std::vector<std::string> ListSupportedDvmRanges(const std::string &function) override {
+            return service_.ListSupportedDvmRanges(function);
+        }
         void SetDisplay(
             const std::string &name,
             const std::string &display,
@@ -635,6 +641,14 @@ private:
             device.setDvmDisplay(scpi::DvmDisplay::Main, mode);
             return 0;
         });
+    }
+
+    std::vector<std::string> ListSupportedDvmFunctions() {
+        return scpi::supportedDvmFunctions();
+    }
+
+    std::vector<std::string> ListSupportedDvmRanges(const std::string &function) {
+        return scpi::supportedDvmRanges(parseDvmFunction(function));
     }
 
     void SetDisplay(
