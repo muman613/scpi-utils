@@ -146,6 +146,9 @@ private:
 
 std::string toScpiFunction(DvmFunction function);
 std::string toScpiDisplayFunction(DvmFunction function);
+std::string toDvmFunctionName(DvmFunction function);
+std::vector<std::string> supportedDvmFunctions();
+std::vector<std::string> supportedDvmRanges(DvmFunction function);
 std::optional<ScpiIdentity> parseScpiIdentity(const std::string &identity);
 bool isValidScpiIdentity(const std::string &identity);
 const char *version();

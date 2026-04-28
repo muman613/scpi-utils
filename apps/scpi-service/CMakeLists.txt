@@ -1,6 +1,11 @@
 find_package(sdbus-c++ REQUIRED CONFIG)
 find_package(sdbus-c++-tools REQUIRED CONFIG)
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LIBUDEV REQUIRED libudev)
+endif()
+
 set(SCPI_SERVICE_DBUS_XML ${PROJECT_SOURCE_DIR}/dbus/scpi-service.xml)
 set(SCPI_SERVICE_ADAPTOR ${CMAKE_CURRENT_BINARY_DIR}/scpi-service-adaptor.h)
 set(SCPI_SERVICE_PROXY ${CMAKE_CURRENT_BINARY_DIR}/scpi-service-proxy.h)
@@ -31,6 +36,12 @@ target_link_libraries(scpi-service
         scpi::device
         SDBusCpp::sdbus-c++
 )
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_include_directories(scpi-service PRIVATE ${LIBUDEV_INCLUDE_DIRS})
+    target_link_libraries(scpi-service PRIVATE ${LIBUDEV_LIBRARIES})
+    target_compile_definitions(scpi-service PRIVATE SCPI_SERVICE_HAS_UDEV=1)
+endif()
 
 target_compile_features(scpi-service PRIVATE cxx_std_17)
 target_include_directories(scpi-service PRIVATE ${CMAKE_CURRENT_BINARY_DIR})

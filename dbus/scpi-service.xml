@@ -41,6 +41,11 @@
     <signal name="DeviceRemoved">
       <arg name="name" type="s"/>
     </signal>
+
+    <signal name="SerialPortsChanged">
+      <arg name="action" type="s"/>
+      <arg name="port" type="s"/>
+    </signal>
   </interface>
 
   <interface name="org.scpi.DeviceControl">
@@ -85,6 +90,15 @@
       <arg name="name" type="s" direction="in"/>
       <arg name="function" type="s" direction="in"/>
       <arg name="range" type="s" direction="in"/>
+    </method>
+
+    <method name="ListSupportedDvmFunctions">
+      <arg name="functions" type="as" direction="out"/>
+    </method>
+
+    <method name="ListSupportedDvmRanges">
+      <arg name="function" type="s" direction="in"/>
+      <arg name="ranges" type="as" direction="out"/>
     </method>
 
     <method name="SetDisplay">

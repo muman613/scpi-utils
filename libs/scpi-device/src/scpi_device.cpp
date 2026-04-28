@@ -134,6 +134,14 @@ std::string commandWithArguments(const std::string &command, double range, doubl
     return command + " " + std::to_string(range) + "," + std::to_string(resolution);
 }
 
+std::vector<std::string> withAutomaticRanges(std::vector<std::string> ranges) {
+    ranges.emplace_back("AUTO");
+    ranges.emplace_back("MIN");
+    ranges.emplace_back("MAX");
+    ranges.emplace_back("DEF");
+    return ranges;
+}
+
 nlohmann::json serialOptionsToJson(const SerialOptions &options) {
     return {
         {"baudRate", options.baudRate},
@@ -753,6 +761,77 @@ std::string toScpiDisplayFunction(DvmFunction function) {
         return "CONT";
     case DvmFunction::Diode:
         return "DIOD";
+    }
+
+    throw std::invalid_argument("unknown DVM function");
+}
+
+std::string toDvmFunctionName(DvmFunction function) {
+    switch (function) {
+    case DvmFunction::DcVoltage:
+        return "vdc";
+    case DvmFunction::AcVoltage:
+        return "vac";
+    case DvmFunction::DcCurrent:
+        return "idc";
+    case DvmFunction::AcCurrent:
+        return "iac";
+    case DvmFunction::Resistance:
+        return "resistance";
+    case DvmFunction::FourWireResistance:
+        return "fres";
+    case DvmFunction::Frequency:
+        return "frequency";
+    case DvmFunction::Period:
+        return "period";
+    case DvmFunction::Capacitance:
+        return "capacitance";
+    case DvmFunction::Continuity:
+        return "continuity";
+    case DvmFunction::Diode:
+        return "diode";
+    }
+
+    throw std::invalid_argument("unknown DVM function");
+}
+
+std::vector<std::string> supportedDvmFunctions() {
+    return {
+        toDvmFunctionName(DvmFunction::DcVoltage),
+        toDvmFunctionName(DvmFunction::AcVoltage),
+        toDvmFunctionName(DvmFunction::DcCurrent),
+        toDvmFunctionName(DvmFunction::AcCurrent),
+        toDvmFunctionName(DvmFunction::Resistance),
+        toDvmFunctionName(DvmFunction::FourWireResistance),
+        toDvmFunctionName(DvmFunction::Frequency),
+        toDvmFunctionName(DvmFunction::Period),
+        toDvmFunctionName(DvmFunction::Capacitance),
+        toDvmFunctionName(DvmFunction::Continuity),
+        toDvmFunctionName(DvmFunction::Diode),
+    };
+}
+
+std::vector<std::string> supportedDvmRanges(DvmFunction function) {
+    switch (function) {
+    case DvmFunction::DcVoltage:
+        return withAutomaticRanges({"500E-3", "5", "50", "500", "1000"});
+    case DvmFunction::AcVoltage:
+        return withAutomaticRanges({"500E-3", "5", "50", "500", "750"});
+    case DvmFunction::DcCurrent:
+        return withAutomaticRanges({"50E-3", "500E-3", "5", "50", "500", "1000"});
+    case DvmFunction::AcCurrent:
+        return withAutomaticRanges({"500E-3", "5", "50", "500", "750"});
+    case DvmFunction::Resistance:
+        return withAutomaticRanges({"500", "5E3", "50E3", "500E3", "5E6", "50E6", "500E6"});
+    case DvmFunction::FourWireResistance:
+        return withAutomaticRanges({"500", "5E3", "50E3"});
+    case DvmFunction::Capacitance:
+        return withAutomaticRanges({"50E-9", "500E-9", "5E-6", "50E-6", "500E-6", "5E-3", "50E-3"});
+    case DvmFunction::Frequency:
+    case DvmFunction::Period:
+    case DvmFunction::Continuity:
+    case DvmFunction::Diode:
+        return {};
     }
 
     throw std::invalid_argument("unknown DVM function");
