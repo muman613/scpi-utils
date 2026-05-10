@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstring>
 #include <exception>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -250,11 +251,51 @@ void testFirstQueryTimeoutIsRetriedAfterOpen() {
     require(identity == "OWON,XDM1041,24152470,V4.3.0,3", "unexpected identity after retry");
 }
 
+void testDeviceProfileResolution() {
+    const scpi::DeviceProfile owon = scpi::resolveDeviceProfile("OWON,XDM1041,24152470,V4.3.0,3");
+    require(owon.type == "dmm", "OWON XDM should resolve as DMM");
+    require(owon.profile == "owon-xdm", "OWON XDM should resolve to owon-xdm profile");
+
+    const scpi::DeviceProfile unknown = scpi::resolveDeviceProfile("ACME,MODEL1,1,2");
+    require(unknown.type == "unknown", "unknown identity should resolve as unknown type");
+    require(unknown.profile == "generic-scpi", "unknown identity should use generic SCPI profile");
+}
+
+void testRegistryPersistsDeviceProfile() {
+    const auto path = std::filesystem::temp_directory_path() /
+        ("scpi-utils-registry-test-" + std::to_string(::getpid()) + ".json");
+
+    scpi::SerialOptions options;
+    options.baudRate = 115200;
+    {
+        scpi::DeviceRegistry registry(path);
+        registry.setDevice(
+            "bench-dmm",
+            "/dev/example",
+            options,
+            "OWON,XDM1041,24152470,V4.3.0,3",
+            {"dmm", "owon-xdm"});
+    }
+
+    scpi::DeviceRegistry registry(path);
+    const auto device = registry.getDevice("bench-dmm");
+    std::filesystem::remove(path);
+
+    require(device.has_value(), "registry did not reload saved device");
+    require(device->type == "dmm", "registry did not persist device type");
+    require(device->profile == "owon-xdm", "registry did not persist device profile");
+    require(
+        device->identity == "OWON,XDM1041,24152470,V4.3.0,3",
+        "registry did not persist identity");
+}
+
 } // namespace
 
 int main() {
     try {
         testDvmCapabilities();
+        testDeviceProfileResolution();
+        testRegistryPersistsDeviceProfile();
         testIdentityQueryRoundTrip();
         testBlockingIdentityQueryRoundTrip();
         testOpenSettlesBeforeFirstWrite();

@@ -54,6 +54,13 @@ interfaces on D-Bus:
 - `org.scpi.Registry`
 - `org.scpi.DeviceControl`
 
+Opening a registered device also creates a live per-device object path under
+`/org/scpi/devices/<device-name>`. The live object always exposes
+`org.scpi.Device`; devices resolved as digital multimeters also expose
+`org.scpi.DigitalMultimeter`. Closing the device removes the live object and
+closes the serial port. The older DVM methods on `org.scpi.DeviceControl` remain
+available as compatibility wrappers.
+
 The introspection XML for the service contract lives at:
 
 ```text
@@ -192,6 +199,8 @@ be running on the selected bus before most commands will succeed.
 scpi-util [--session|--system] add <device-name> <serial-port-device> [options]
 scpi-util [--session|--system] rm <device-name>
 scpi-util [--session|--system] info <device-name>
+scpi-util [--session|--system] open <device-name>
+scpi-util [--session|--system] close <device-name>
 scpi-util [--session|--system] devices
 scpi-util [--session|--system] list
 scpi-util [--session|--system] scan
@@ -226,9 +235,12 @@ scpi-util add bench-dvm /dev/serial/by-id/usb-example \
 
 `scan` suppresses per-device errors by default and only prints devices that
 respond with a valid 4-field or 5-field comma-separated identity. Use `-v` or
-`--verbose` to show failed scan attempts.
+`--verbose` to show failed scan attempts. Successful scan results include the
+resolved device type and profile when the identity matches the built-in resolver.
 
-`devices` lists configured registry entries, including serial port settings.
+`add` opens the serial port, queries `*IDN?`, resolves a broad device type and
+profile, and stores those fields in the registry. `devices` lists configured
+registry entries, including serial port settings, type, and profile.
 `list` opens each configured device, queries `*IDN?`, and prints parsed identity
 fields:
 
@@ -252,6 +264,36 @@ $HOME/.config/scpi-utils/devices.json
 ```
 
 Prefer stable `/dev/serial/by-id/...` symlinks when registering devices.
+
+## Device Types
+
+Registered devices store a broad type string and a profile string. The type
+selects the high-level DBus interface shape, while the profile identifies the
+SCPI command dialect used by a manufacturer/model family. Unknown instruments
+are stored as:
+
+```text
+type: unknown
+profile: generic-scpi
+```
+
+The initial resolver recognizes OWON XDM-series instruments as:
+
+```text
+type: dmm
+profile: owon-xdm
+```
+
+The supported type vocabulary is:
+
+```text
+dmm, bench-power-supply, electronic-load, oscilloscope, function-generator,
+arbitrary-waveform-generator, frequency-counter, spectrum-analyzer,
+rf-signal-generator, lcr-meter, impedance-analyzer, source-measure-unit,
+data-acquisition-unit, switch-matrix, logic-analyzer, protocol-analyzer,
+power-analyzer, environmental-chamber, battery-tester, hipot-tester,
+calibrator, optical-power-meter, rf-power-meter, unknown
+```
 
 ## Serial Smoke Test
 

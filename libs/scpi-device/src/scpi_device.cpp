@@ -126,6 +126,13 @@ std::string trimWhitespace(std::string value) {
     return std::string(first, last);
 }
 
+std::string lowerAscii(std::string value) {
+    for (char &ch : value) {
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+    return value;
+}
+
 void throwSystemError(const std::string &message) {
     throw std::system_error(errno, std::generic_category(), message);
 }
@@ -222,17 +229,22 @@ SerialOptions DeviceRegistry::getOptions(const std::string &name) const {
 void DeviceRegistry::setDevice(
     const std::string &name,
     const std::string &port,
-    const SerialOptions &options) {
+    const SerialOptions &options,
+    const std::string &identity,
+    const DeviceProfile &profile) {
     const auto found = std::find_if(
         devices_.begin(),
         devices_.end(),
         [&name](const RegisteredDevice &device) { return device.name == name; });
 
     if (found == devices_.end()) {
-        devices_.push_back(RegisteredDevice{name, port, options});
+        devices_.push_back(RegisteredDevice{name, port, options, identity, profile.type, profile.profile});
     } else {
         found->port = port;
         found->options = options;
+        found->identity = identity;
+        found->type = profile.type;
+        found->profile = profile.profile;
     }
 
     std::sort(
@@ -282,6 +294,9 @@ void DeviceRegistry::load() {
         device.name = name;
         device.port = value.value("port", "");
         device.options = serialOptionsFromJson(value.value("serial", nlohmann::json::object()));
+        device.identity = value.value("identity", "");
+        device.type = value.value("type", "unknown");
+        device.profile = value.value("profile", "generic-scpi");
 
         if (!device.port.empty()) {
             devices_.push_back(std::move(device));
@@ -310,6 +325,9 @@ void DeviceRegistry::save() const {
         root["devices"][device.name] = {
             {"port", device.port},
             {"serial", serialOptionsToJson(device.options)},
+            {"identity", device.identity},
+            {"type", device.type},
+            {"profile", device.profile},
         };
     }
 
@@ -875,6 +893,57 @@ std::optional<ScpiIdentity> parseScpiIdentity(const std::string &identity) {
 
 bool isValidScpiIdentity(const std::string &identity) {
     return parseScpiIdentity(identity).has_value();
+}
+
+DeviceProfile resolveDeviceProfile(const std::string &identity) {
+    const auto parsed = parseScpiIdentity(identity);
+    if (!parsed) {
+        return {};
+    }
+
+    const std::string manufacturer = lowerAscii(parsed->manufacturer);
+    const std::string model = lowerAscii(parsed->model);
+
+    if (manufacturer == "owon" && model.rfind("xdm", 0) == 0) {
+        return {"dmm", "owon-xdm"};
+    }
+
+    if (model.find("344") != std::string::npos ||
+        model.find("dmm") != std::string::npos ||
+        model.find("multimeter") != std::string::npos) {
+        return {"dmm", "generic-dmm"};
+    }
+
+    return {};
+}
+
+std::vector<std::string> supportedDeviceTypes() {
+    return {
+        "dmm",
+        "bench-power-supply",
+        "electronic-load",
+        "oscilloscope",
+        "function-generator",
+        "arbitrary-waveform-generator",
+        "frequency-counter",
+        "spectrum-analyzer",
+        "rf-signal-generator",
+        "lcr-meter",
+        "impedance-analyzer",
+        "source-measure-unit",
+        "data-acquisition-unit",
+        "switch-matrix",
+        "logic-analyzer",
+        "protocol-analyzer",
+        "power-analyzer",
+        "environmental-chamber",
+        "battery-tester",
+        "hipot-tester",
+        "calibrator",
+        "optical-power-meter",
+        "rf-power-meter",
+        "unknown",
+    };
 }
 
 } // namespace scpi

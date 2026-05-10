@@ -196,7 +196,9 @@ scpi::DeviceRegistry registry;
 registry.setDevice(
     "bench-dvm",
     "/dev/serial/by-id/usb-example",
-    scpi::SerialOptions{});
+    scpi::SerialOptions{},
+    "OWON,XDM1041,24152470,V4.3.0,3",
+    scpi::resolveDeviceProfile("OWON,XDM1041,24152470,V4.3.0,3"));
 
 auto device = registry.getDevice("bench-dvm");
 if (device) {
@@ -221,7 +223,9 @@ scpi-util add bench-dvm /dev/serial/by-id/usb-example \
 - `getDevice(name)` returns an optional `RegisteredDevice`.
 - `getPort(name)` returns only the serial port or throws when missing.
 - `getOptions(name)` returns only the serial options or throws when missing.
-- `setDevice(name, port, options)` adds or replaces a device and saves JSON.
+- `setDevice(name, port, options, identity, profile)` adds or replaces a device
+  and saves JSON. `identity` and `profile` are optional; omitted values store
+  the device as `unknown` with the `generic-scpi` profile.
 - `removeDevice(name)` removes a device, saves JSON, and reports whether it
   existed.
 - `load()` reloads the JSON backing file.
@@ -241,7 +245,10 @@ The JSON schema is:
                 "readTimeoutMs": 1000,
                 "writeTimeoutMs": 1000,
                 "lineEnding": "\n"
-            }
+            },
+            "identity": "OWON,XDM1041,24152470,V4.3.0,3",
+            "type": "dmm",
+            "profile": "owon-xdm"
         }
     }
 }

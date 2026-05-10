@@ -25,6 +25,11 @@ struct ScpiIdentity {
     std::vector<std::string> fields;
 };
 
+struct DeviceProfile {
+    std::string type = "unknown";
+    std::string profile = "generic-scpi";
+};
+
 enum class DvmFunction {
     DcVoltage,
     AcVoltage,
@@ -56,6 +61,9 @@ struct RegisteredDevice {
     std::string name;
     std::string port;
     SerialOptions options;
+    std::string identity;
+    std::string type = "unknown";
+    std::string profile = "generic-scpi";
 };
 
 class DeviceRegistry {
@@ -73,7 +81,9 @@ public:
     void setDevice(
         const std::string &name,
         const std::string &port,
-        const SerialOptions &options = {});
+        const SerialOptions &options = {},
+        const std::string &identity = {},
+        const DeviceProfile &profile = {});
     bool removeDevice(const std::string &name);
 
     void load();
@@ -151,6 +161,8 @@ std::vector<std::string> supportedDvmFunctions();
 std::vector<std::string> supportedDvmRanges(DvmFunction function);
 std::optional<ScpiIdentity> parseScpiIdentity(const std::string &identity);
 bool isValidScpiIdentity(const std::string &identity);
+DeviceProfile resolveDeviceProfile(const std::string &identity);
+std::vector<std::string> supportedDeviceTypes();
 const char *version();
 
 } // namespace scpi

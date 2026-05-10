@@ -50,3 +50,7 @@ target_compile_definitions(scpi-service PRIVATE SCPI_SERVICE_VERSION="${SCPI_SER
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(scpi-service PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+install(TARGETS scpi-service
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)

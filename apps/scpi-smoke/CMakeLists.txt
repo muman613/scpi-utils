@@ -13,3 +13,7 @@ target_compile_definitions(scpi-smoke PRIVATE SCPI_SMOKE_VERSION="${SCPI_SMOKE_V
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(scpi-smoke PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+install(TARGETS scpi-smoke
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)

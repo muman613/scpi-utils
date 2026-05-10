@@ -34,3 +34,7 @@ target_compile_definitions(scpi-util PRIVATE SCPI_UTIL_VERSION="${SCPI_UTIL_VERS
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(scpi-util PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+install(TARGETS scpi-util
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
